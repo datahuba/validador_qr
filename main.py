@@ -20,28 +20,17 @@ load_dotenv()
 scope = ["https://spreadsheets.google.com/feeds", 'https://www.googleapis.com/auth/spreadsheets',
          "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"]
 
-# Lee el contenido de las credenciales JSON desde la variable de entorno
-creds_json_str = os.getenv("GOOGLE_CREDENTIALS_JSON")
-if not creds_json_str:
-    raise ValueError("Error Crítico: La variable de entorno GOOGLE_CREDENTIALS_JSON no está configurada.")
 
-# Convierte el string JSON a un diccionario de Python
-creds_dict = json.loads(creds_json_str)
-
-# --- CORRECCIÓN DEL ERROR ---
-# La librería 'oauth2client' espera que la clave privada esté en formato de bytes, no de string.
-# Codificamos la clave privada (que es un string) a bytes usando UTF-8.
-private_key_bytes = creds_dict['private_key'].encode('utf-8')
-# Actualizamos el diccionario con la clave ya en formato de bytes.
-creds_dict['private_key'] = private_key_bytes
-# --- FIN DE LA CORRECCIÓN ---
-
-# Autoriza al cliente usando el diccionario de credenciales (en lugar de un archivo)
 try:
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    creds = ServiceAccountCredentials.from_json_keyfile_name(
+        "credentials.json", # El nombre del Secret File que creaste en Render
+        scope
+    )
     client = gspread.authorize(creds)
+except FileNotFoundError:
+    raise RuntimeError("Error Crítico: No se encontró el archivo 'credentials.json'. Asegúrate de que el archivo existe en tu carpeta local o que está configurado correctamente como un 'Secret File' en Render.")
 except Exception as e:
-    raise RuntimeError(f"Error al procesar las credenciales de Google. Revisa el formato del JSON. Error: {e}")
+    raise RuntimeError(f"Error al cargar las credenciales desde 'credentials.json'. El contenido del JSON podría ser inválido. Error: {e}")
 
 
 # Abre la hoja de cálculo por su ID (más seguro que por nombre)
