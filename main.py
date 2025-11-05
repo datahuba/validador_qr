@@ -10,6 +10,8 @@ import datetime
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
+from fastapi.middleware.cors import CORSMiddleware
+
 # 1. CARGAR CONFIGURACIÓN
 load_dotenv()
 
@@ -46,6 +48,22 @@ app = FastAPI(
     description="API para validar entradas de un evento.",
     version="4.1.0"
 )
+
+origins = [
+    "http://localhost",
+    "http://localhost:8080",
+    "http://localhost:3000",
+    "https://validador-qr-frontend.vercel.app"
+
+]
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,      
+    allow_credentials=True,      
+)
+
 class Ticket(BaseModel):
     f1_code: int
 
