@@ -4,9 +4,10 @@ import os
 import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, responses
 from pydantic import BaseModel
 import datetime
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 # 1. CARGAR CONFIGURACIÓN
@@ -16,20 +17,20 @@ load_dotenv()
 scope = ["https://spreadsheets.google.com/feeds", 'https://www.googleapis.com/auth/spreadsheets',
          "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"]
 
-# Esta es la ruta correcta para Docker en Render
+# Esta es la ruta para Docker en Render
 SECRET_FILE_PATH = "credentials.json"
-# Para pruebas locales, descomenta la siguiente línea y asegúrate de que el archivo está en la misma carpeta
-# SECRET_FILE_PATH = "credentials.json" 
+# Para pruebas locales, crea un .env y añade: SECRET_FILE_PATH_LOCAL="credentials.json"
+if os.getenv("SECRET_FILE_PATH_LOCAL"):
+    SECRET_FILE_PATH = os.getenv("SECRET_FILE_PATH_LOCAL")
 
 try:
     creds = ServiceAccountCredentials.from_json_keyfile_name(SECRET_FILE_PATH, scope)
     client = gspread.authorize(creds)
 except FileNotFoundError:
-    raise RuntimeError(f"Error Crítico: No se encontró el archivo de credenciales en la ruta '{SECRET_FILE_PATH}'.")
+    raise RuntimeError(f"Error Crítico: No se encontró el archivo de credenciales en '{SECRET_FILE_PATH}'.")
 except Exception as e:
-    raise RuntimeError(f"Error al cargar las credenciales desde '{SECRET_FILE_PATH}'. Error: {e}")
+    raise RuntimeError(f"Error al cargar las credenciales. Error: {e}")
 
-# Abre la hoja de cálculo por su ID
 sheet_id = os.getenv("GOOGLE_SHEET_ID")
 if not sheet_id:
     raise ValueError("Error Crítico: La variable de entorno GOOGLE_SHEET_ID no está configurada.")
@@ -42,7 +43,8 @@ except Exception as e:
 # 3. LÓGICA DE LA API CON FASTAPI
 app = FastAPI(
     title="API Validador de Entradas",
-    version="3.0.1"
+    description="API para validar entradas de un evento.",
+    version="4.1.0"
 )
 class Ticket(BaseModel):
     f1_code: int
@@ -50,47 +52,73 @@ class Ticket(BaseModel):
 @app.post("/validate-ticket", tags=["Validación"])
 def validate_ticket(ticket: Ticket):
     try:
+        # <<< CAMBIO: Buscando en la columna J (10) según tu indicación >>>
         cell = sheet.find(str(ticket.f1_code), in_column=10)
-        
-        # --- INICIO DE LA CORRECCIÓN ---
-        # Añadimos esta verificación crucial.
-        # Si 'cell' es None, significa que el código no se encontró.
-        if not cell:
-            # Lanzamos una excepción controlada que FastAPI convierte en un error 404.
-            raise HTTPException(status_code=404, detail="ENTRADA INVÁLIDA: El código no existe en la base de datos.")
-        # --- FIN DE LA CORRECCIÓN ---
-
     except Exception as e:
-        # Este bloque captura cualquier otro error durante la comunicación
-        if isinstance(e, HTTPException):
-            raise e # Re-lanza la excepción que ya creamos
-        raise HTTPException(status_code=503, detail=f"Error de comunicación con Google Sheets: {e}")
+        error_response = {
+            "status": "error", "error_code": "SERVICE_UNAVAILABLE",
+            "message": f"Error de comunicación con Google Sheets: {e}"
+        }
+        return responses.JSONResponse(status_code=503, content=error_response)
 
-    # Si el código llega aquí, 'cell' es un objeto válido y podemos continuar.
+    # --- Escenario 3: Entrada NO EXISTE ---
+    if not cell:
+        error_response = {
+            "status": "error",
+            "error_code": "NOT_FOUND",
+            "message": "Código QR no válido. La entrada no existe."
+        }
+        raise HTTPException(status_code=404, detail=error_response)
+
     row_data = sheet.row_values(cell.row)
 
-    COL_NOMBRE = 2
-    COL_VALIDADO = 24
+    # <<< CAMBIO: Añadida la columna del ID de usuario >>>
+    # Definimos las columnas según tu indicación:
+    COL_USER_ID = 1   # Columna A
+    COL_NOMBRE = 2    # Columna B
+    COL_VALIDADO = 24 # Columna X
 
+    # Extraemos los datos de forma segura
+    user_id = row_data[COL_USER_ID - 1] if len(row_data) >= COL_USER_ID else "N/A"
+    nombre_asistente = row_data[COL_NOMBRE - 1] if len(row_data) >= COL_NOMBRE else "N/A"
     estado_validacion = row_data[COL_VALIDADO - 1] if len(row_data) >= COL_VALIDADO else ""
-    nombre_asistente = row_data[COL_NOMBRE - 1] if len(row_data) >= COL_NOMBRE else "Asistente no encontrado"
 
+    # --- Escenario 2: Entrada YA REGISTRADA ---
     if estado_validacion:
-        raise HTTPException(
-            status_code=409,
-            detail=f"ENTRADA RECHAZADA: Este código ya fue utilizado."
-        )
-
-    try:
-        timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        sheet.update_cell(cell.row, COL_VALIDADO, '1')
-        return {
-            "status": "success",
-            "message": "ACCESO AUTORIZADO",
-            "data": {
-                "nombre": nombre_asistente,
-                "hora_validacion": timestamp
+        # <<< CAMBIO: Añadido el user_id a la respuesta de error >>>
+        error_response = {
+            "status": "error",
+            "error_code": "ALREADY_SCANNED",
+            "message": "Esta entrada ya fue registrada.",
+            "ticket_data": {
+                "user_name": nombre_asistente,
+                "user_id": user_id,
+                "scanned_at": estado_validacion
             }
         }
+        raise HTTPException(status_code=409, detail=error_response)
+
+    # --- Escenario 1: ÉXITO (Entrada Válida) ---
+    try:
+        timestamp = datetime.datetime.now(ZoneInfo("America/La_Paz")).isoformat()
+        # Escribimos el timestamp en la columna 'Validado' (X)
+        sheet.update_cell(cell.row, COL_VALIDADO, timestamp)
+        
+        # <<< CAMBIO: Añadido el user_id a la respuesta de éxito >>>
+        success_response = {
+            "status": "success",
+            "message": "Acceso permitido",
+            "ticket_data": {
+                "user_name": nombre_asistente,
+                "user_id": user_id,
+                "scanned_at": timestamp
+            }
+        }
+        return responses.JSONResponse(status_code=200, content=success_response)
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error Crítico: No se pudo actualizar el estado de la entrada. Por favor, inténtelo de nuevo. Error: {e}")
+        error_response = {
+            "status": "error", "error_code": "UPDATE_FAILED",
+            "message": f"Error Crítico: No se pudo actualizar el estado de la entrada. Error: {e}"
+        }
+        raise HTTPException(status_code=500, detail=error_response)
