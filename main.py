@@ -68,7 +68,7 @@ app.add_middleware(
 
 
 class Ticket(BaseModel):
-    f1_code: int
+    f1_code: str
 
 @app.post("/validate-ticket", tags=["Validación"])
 def validate_ticket(ticket: Ticket):
@@ -97,7 +97,7 @@ def validate_ticket(ticket: Ticket):
     # Definimos las columnas según tu indicación:
     COL_USER_ID = 1   # Columna A
     COL_NOMBRE = 2    # Columna B
-    COL_VALIDADO = 24 # Columna X
+    COL_VALIDADO = 21 # Columna X
 
     # Extraemos los datos de forma segura
     user_id = row_data[COL_USER_ID - 1] if len(row_data) >= COL_USER_ID else "N/A"
