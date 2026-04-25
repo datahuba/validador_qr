@@ -97,7 +97,7 @@ def validate_ticket(ticket: Ticket):
     # Definimos las columnas según tu indicación:
     COL_USER_ID = 1   # Columna A
     COL_NOMBRE = 2    # Columna B
-    COL_VALIDADO = 21 # Columna X
+    COL_VALIDADO = 19 # Columna S
 
     # Extraemos los datos de forma segura
     user_id = row_data[COL_USER_ID - 1] if len(row_data) >= COL_USER_ID else "N/A"
@@ -122,7 +122,7 @@ def validate_ticket(ticket: Ticket):
     # --- Escenario 1: ÉXITO (Entrada Válida) ---
     try:
         timestamp = datetime.datetime.now(ZoneInfo("America/La_Paz")).isoformat()
-        # Escribimos el timestamp en la columna 'Validado' (X)
+        # Escribimos el timestamp en la columna 'Validado' (S)
         sheet.update_cell(cell.row, COL_VALIDADO, timestamp)
         
         # <<< CAMBIO: Añadido el user_id a la respuesta de éxito >>>
