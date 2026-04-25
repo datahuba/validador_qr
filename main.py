@@ -3,7 +3,6 @@
 import os
 import json
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 from fastapi import FastAPI, HTTPException, responses
 from pydantic import BaseModel
 import datetime
@@ -16,20 +15,16 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
 
 # 2. CONEXIÓN SEGURA CON GOOGLE SHEETS
-scope = ["https://spreadsheets.google.com/feeds", 'https://www.googleapis.com/auth/spreadsheets',
-         "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"]
-
-# Esta es la ruta para Docker en Render
-SECRET_FILE_PATH = "credentials.json"
-# Para pruebas locales, crea un .env y añade: SECRET_FILE_PATH_LOCAL="credentials.json"
-if os.getenv("SECRET_FILE_PATH_LOCAL"):
-    SECRET_FILE_PATH = os.getenv("SECRET_FILE_PATH_LOCAL")
-
 try:
-    creds = ServiceAccountCredentials.from_json_keyfile_name(SECRET_FILE_PATH, scope)
-    client = gspread.authorize(creds)
-except FileNotFoundError:
-    raise RuntimeError(f"Error Crítico: No se encontró el archivo de credenciales en '{SECRET_FILE_PATH}'.")
+    creds_json_str = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    if creds_json_str:
+        creds_dict = json.loads(creds_json_str)
+        client = gspread.service_account_from_dict(creds_dict)
+    else:
+        SECRET_FILE_PATH = os.getenv("SECRET_FILE_PATH_LOCAL", "credentials.json")
+        client = gspread.service_account(filename=SECRET_FILE_PATH)
+except FileNotFoundError as e:
+    raise RuntimeError(f"Error Crítico: No se encontró el archivo de credenciales. Error: {e}")
 except Exception as e:
     raise RuntimeError(f"Error al cargar las credenciales. Error: {e}")
 
