@@ -104,7 +104,7 @@ def validate_ticket(ticket: Ticket):
 
     COL_USER_ID = 1   # Columna A
     COL_NOMBRE = 2    # Columna B
-    COL_VALIDADO = 19 # Columna S
+    COL_VALIDADO = 21 # Columna U
 
     user_id = row_data[COL_USER_ID - 1] if len(row_data) >= COL_USER_ID else "N/A"
     nombre_asistente = row_data[COL_NOMBRE - 1] if len(row_data) >= COL_NOMBRE else "N/A"
