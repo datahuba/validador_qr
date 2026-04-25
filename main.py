@@ -14,6 +14,24 @@ from fastapi.middleware.cors import CORSMiddleware
 # 1. CARGAR CONFIGURACIÓN
 load_dotenv()
 
+# IDs de las 70 entradas generadas con QR = ticket ID (no valor P)
+LEGACY_IDS = {
+    'ZJ7DIV9H', 'RD5SOWG8', '5N3F9U3M', 'ZICTUOVZ', 'D79SJ7W2',
+    'H7B4UA9T', 'Y03BUZ3W', 'CFOZ3DKA', 'RH38SM7B', 'L7B8QHNX',
+    'W06X5N8K', 'CM3I0A9R', 'UD7HYE5P', 'G02QZWG0', 'E1R4UXFL',
+    'GVO54YUN', '34R2EIPS', '3F1QTZYO', 'GU0MD04Q', '53ON2D9I',
+    'JRNP4FX1', 'N4QG4U09', 'B5X13DGU', '8J507N8S', 'KHBC5894',
+    'IK8LPDRN', 'EM607Q6R', '3XW76OIF', 'ZVX1R7ZC', 'UMWM3ZQ5',
+    'MWV90ZZM', 'LB4NI8MM', 'BYRKRXXZ', 'PO9QM97B', 'Z40HUWAV',
+    'YO0TO8R3', 'FW5ZVEH5', '717ZFXJH', '1U0KCK8E', 'BWMZ553Q',
+    'THVPG6IV', '2SYRUWU4', 'PEKP35AH', 'XDW9GR0M', '50KEPSRD',
+    'LXD4BUNC', '8BLJQD8U', 'J0OH2QNN', 'U5NNFDRQ', 'FFZFUEP2',
+    'PCF2GCMW', '7FG7N3IL', 'V4VVX8DF', '9OUDNKZU', 'F3ZD7N7K',
+    'LYZUUO4R', 'KAHHXU8R', 'U4SH8IP3', '7HT8GOMQ', 'D3RKVXVX',
+    'FBQ5W8L9', '4R5L8EOH', '677W604J', 'MFDVCMCH', 'GCA1PMFE',
+    'D84NJGGX', '7KV8HB15', 'F0TYP804', 'CP0MBKBW', 'Z1J9LOW6',
+}
+
 # 2. CONEXIÓN SEGURA CON GOOGLE SHEETS
 try:
     creds_json_str = os.getenv("GOOGLE_CREDENTIALS_JSON")
@@ -41,24 +59,15 @@ except Exception as e:
 app = FastAPI(
     title="API Validador de Entradas",
     description="API para validar entradas de un evento.",
-    version="4.1.0"
+    version="4.2.0"
 )
-
-origins = [
-    "http://localhost",
-    "http://localhost:8080",
-    "http://localhost:3000",
-    "https://validador-qr-frontend.vercel.app"
-
-]
-
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permite todos los orígenes
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Permite todos los métodos (GET, POST, etc.)
-    allow_headers=["*"],  # Permite todos los encabezados
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -67,9 +76,14 @@ class Ticket(BaseModel):
 
 @app.post("/validate-ticket", tags=["Validación"])
 def validate_ticket(ticket: Ticket):
+    code = str(ticket.f1_code).strip()
+
+    # Entradas legacy: QR contiene el ID → buscar en columna A (1)
+    # Resto: QR contiene el valor P (F1×F2) → buscar en columna J (10)
+    search_column = 1 if code in LEGACY_IDS else 10
+
     try:
-        # <<< CAMBIO: Buscando en la columna J (10) según tu indicación >>>
-        cell = sheet.find(str(ticket.f1_code), in_column=10)
+        cell = sheet.find(code, in_column=search_column)
     except Exception as e:
         error_response = {
             "status": "error", "error_code": "SERVICE_UNAVAILABLE",
@@ -88,20 +102,16 @@ def validate_ticket(ticket: Ticket):
 
     row_data = sheet.row_values(cell.row)
 
-    # <<< CAMBIO: Añadida la columna del ID de usuario >>>
-    # Definimos las columnas según tu indicación:
     COL_USER_ID = 1   # Columna A
     COL_NOMBRE = 2    # Columna B
     COL_VALIDADO = 19 # Columna S
 
-    # Extraemos los datos de forma segura
     user_id = row_data[COL_USER_ID - 1] if len(row_data) >= COL_USER_ID else "N/A"
     nombre_asistente = row_data[COL_NOMBRE - 1] if len(row_data) >= COL_NOMBRE else "N/A"
     estado_validacion = row_data[COL_VALIDADO - 1] if len(row_data) >= COL_VALIDADO else ""
 
     # --- Escenario 2: Entrada YA REGISTRADA ---
     if estado_validacion:
-        # <<< CAMBIO: Añadido el user_id a la respuesta de error >>>
         error_response = {
             "status": "error",
             "error_code": "ALREADY_SCANNED",
@@ -117,10 +127,8 @@ def validate_ticket(ticket: Ticket):
     # --- Escenario 1: ÉXITO (Entrada Válida) ---
     try:
         timestamp = datetime.datetime.now(ZoneInfo("America/La_Paz")).isoformat()
-        # Escribimos el timestamp en la columna 'Validado' (S)
         sheet.update_cell(cell.row, COL_VALIDADO, timestamp)
-        
-        # <<< CAMBIO: Añadido el user_id a la respuesta de éxito >>>
+
         success_response = {
             "status": "success",
             "message": "Acceso permitido",
